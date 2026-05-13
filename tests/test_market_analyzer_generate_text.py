@@ -731,6 +731,49 @@ class TestMarketAnalyzerBypassFix:
         assert "今日美股市场整体呈现**小幅下跌**态势" in result
         assert "### 1. Market Summary" not in result
         assert "US Market Recap" not in result
+        assert "### 四、热门股票与连板" not in result
+        assert "人气股" not in result
+        assert "涨停" not in result
+        assert "连板" not in result
+        assert "涨停池" not in result
+        assert "高位股分歧风险" not in result
+        assert "### 四、资金与情绪" in result
+
+    def test_generate_template_review_omits_a_share_hot_stock_sections_for_hk(self):
+        from src.core.market_profile import HK_PROFILE
+        from src.core.market_strategy import get_market_strategy_blueprint
+        from src.market_analyzer import MarketOverview, MarketIndex
+
+        ma = self._make_market_analyzer_with_mock_generate_text(return_value=None)
+        ma.region = "hk"
+        ma.profile = HK_PROFILE
+        ma.strategy = get_market_strategy_blueprint("hk")
+        overview = MarketOverview(
+            date="2026-03-05",
+            indices=[
+                MarketIndex(
+                    code="HSI",
+                    name="恒生指数",
+                    current=18600.0,
+                    change=120.0,
+                    change_pct=0.65,
+                )
+            ],
+            hot_stocks=[{"rank": 1, "code": "00700", "name": "腾讯控股"}],
+            limit_up_stocks=[{"code": "00700", "name": "腾讯控股"}],
+        )
+
+        result = ma.generate_market_review(overview, [])
+
+        assert "今日港股市场整体呈现**小幅上涨**态势" in result
+        assert "### 四、热门股票与连板" not in result
+        assert "人气股" not in result
+        assert "涨停" not in result
+        assert "连板" not in result
+        assert "涨停池" not in result
+        assert "高位股分歧风险" not in result
+        assert "### 四、资金与情绪" in result
+        assert "### 五、消息催化" in result
 
     def test_inject_data_into_review_matches_english_headings(self):
         from src.market_analyzer import MarketOverview, MarketIndex

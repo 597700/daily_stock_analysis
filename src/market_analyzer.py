@@ -1387,6 +1387,7 @@ Output the report content directly, no extra commentary.
     def _generate_template_review(self, overview: MarketOverview, news: List) -> str:
         """使用模板生成复盘报告（无大模型时的备选方案）"""
         template_language = self._get_template_review_language()
+        is_a_share_review = self.region == "cn"
         mood_code = self.profile.mood_index_code
         # 根据 mood_index_code 查找对应指数
         # cn: mood_code="000001"，idx.code 可能为 "sh000001"（以 mood_code 结尾）
@@ -1422,7 +1423,7 @@ Output the report content directly, no extra commentary.
         top_text = separator.join([s['name'] for s in overview.top_sectors[:3]])
         bottom_text = separator.join([s['name'] for s in overview.bottom_sectors[:3]])
         top_concept_text = separator.join([s['name'] for s in overview.top_concepts[:3]])
-        hot_stock_block = self._build_hot_stock_block(overview)
+        hot_stock_block = self._build_hot_stock_block(overview) if is_a_share_review else ""
 
         if template_language == "en":
             stats_section = ""
@@ -1495,19 +1496,22 @@ Market conditions can change quickly. The data above is for reference only and d
             if index_laggard
             else "暂无拖累指数"
         )
-        hot_names = separator.join(
-            [
-                s.get("name", "-")
-                for s in overview.hot_stocks[:5]
-                if s.get("name")
-            ]
-        )
-        limit_chain = self._build_limit_chain_summary(overview.limit_up_stocks)
-        limit_chain_text = (
-            limit_chain.replace("> **连板结构**：", "")
-            if limit_chain
-            else "暂无连板梯队数据"
-        )
+        hot_names = ""
+        limit_chain_text = ""
+        if is_a_share_review:
+            hot_names = separator.join(
+                [
+                    s.get("name", "-")
+                    for s in overview.hot_stocks[:5]
+                    if s.get("name")
+                ]
+            )
+            limit_chain = self._build_limit_chain_summary(overview.limit_up_stocks)
+            limit_chain_text = (
+                limit_chain.replace("> **连板结构**：", "")
+                if limit_chain
+                else "暂无连板梯队数据"
+            )
         news_block = self._build_news_block(news)
         if news:
             news_titles = separator.join(
@@ -1520,12 +1524,90 @@ Market conditions can change quickly. The data above is for reference only and d
         else:
             news_titles = "暂无可用新闻，需降低题材持续性的确定性判断"
         summary_mood = scorecard["temperature_label"] if scorecard else market_mood
+
+        if is_a_share_review:
+            overview_commentary = (
+                f"今日盘面核心不是单一指数涨跌，而是宽度、量能和涨跌停结构是否形成共振。"
+                f"上涨占比为 {up_ratio_text}，涨跌停差为 {limit_spread:+d}，"
+                f"成交状态为“{turnover_desc}”，说明短线风险偏好需要结合主线承接来判断。"
+                "若次日量能保持且高标不明显退潮，行情更容易沿强势方向延续；"
+                "若量能回落而跌停扩散，则需从进攻转为观察。"
+            )
+            sector_heading = "### 三、板块主线"
+            sector_commentary = (
+                f"行业涨跌榜只能说明资金流向的表层，真正主线还要看概念题材、人气股和涨停梯队是否相互验证。"
+                f"当前行业强项集中在 {top_text or '暂无行业领涨数据'}，"
+                f"概念侧关注 {top_concept_text or '暂无概念领涨数据'}；若两者方向一致，主线持续性更强，"
+                "若明显背离，则应优先相信人气股和涨停池反馈。"
+                f"弱势方向集中在 {bottom_text or '暂无明显领跌方向'}，短线不宜把被动反弹当成主线切换。"
+            )
+            sector_fallback = "- 暂无板块涨跌榜数据。"
+            hot_stock_section = f"""### 四、热门股票与连板
+人气股可以观察资金审美，涨停连板则反映短线情绪高度。当前人气前排包括 {hot_names or "暂无人气榜数据"}，连板结构为 {limit_chain_text}。如果人气中军、题材弹性股和连板高标指向同一方向，说明主线可信度更高；如果高标独强但中军不跟，追高风险会明显增加。
+
+{hot_stock_block or "- 暂无人气股与涨停池数据。"}
+
+"""
+            sentiment_heading = "### 五、资金与情绪"
+            sentiment_observation = (
+                f"- **情绪观察**：涨跌停差 {limit_spread:+d}，"
+                "若涨停数量保持但跌停同步增加，意味着高位分歧正在放大。"
+            )
+            news_heading = "### 六、消息催化"
+            plan_heading = "### 七、明日交易计划"
+            plan_anchor = "- **观察锚点**：领涨指数是否继续强于大盘、人气股是否维持前排、连板高度是否继续打开。"
+            plan_invalidation = "- **失效条件**：若成交额明显萎缩、跌停数量扩散，或人气前排集体冲高回落，应从进攻转为防守。"
+            risk_heading = "### 八、风险提示"
+            risk_lines = """- **量能透支风险**：放量大涨后若无法继续承接，容易出现冲高回落。
+- **主线误判风险**：行业涨幅第一不等于真实交易主线，需要持续用概念、人气股和涨停池校验。
+- **高位股分歧风险**：连板高度提升时，若中位股掉队，短线亏钱效应可能快速扩散。
+- **消息扰动风险**：外部市场、政策和产业消息变化可能影响风险偏好。
+- 建议仅供参考，不构成投资建议。"""
+        else:
+            stats_context = (
+                f"上涨占比为 {up_ratio_text}"
+                if self.profile.has_market_stats
+                else "当前未提供涨跌家数统计"
+            )
+            overview_commentary = (
+                "今日盘面核心不是单一指数涨跌，而是主要指数承接、成交活跃度和消息催化是否形成共振。"
+                f"{stats_context}，成交状态为“{turnover_desc}”，"
+                "说明风险偏好需要结合指数结构和新闻线索判断。"
+                "若次日量能保持且领涨指数不明显回吐，行情更容易沿强势方向延续；"
+                "若量能回落且关键指数跌破短期支撑，则需从进攻转为观察。"
+            )
+            sector_heading = "### 三、板块与主题线索"
+            sector_focus = top_text or top_concept_text or "暂无板块/主题数据"
+            sector_weak = bottom_text or "暂无明显走弱方向"
+            sector_commentary = (
+                "可得板块和主题线索需要结合指数分化与新闻催化判断。"
+                f"当前强项集中在 {sector_focus}；若板块信号和新闻方向一致，主线持续性更强，"
+                "若数据不足，则优先使用指数结构和催化兑现情况校验方向。"
+                f"弱势方向集中在 {sector_weak}，不宜把被动反弹当成主线切换。"
+            )
+            sector_fallback = "- 暂无可用板块/主题数据。"
+            hot_stock_section = ""
+            sentiment_heading = "### 四、资金与情绪"
+            sentiment_observation = (
+                "- **情绪观察**：若领涨指数扩散、回调时承接稳定，风险偏好更健康；"
+                "若只有单一指数拉动，仍需防范分化。"
+            )
+            news_heading = "### 五、消息催化"
+            plan_heading = "### 六、明日交易计划"
+            plan_anchor = "- **观察锚点**：领涨指数是否继续强于大盘、成交是否维持、新闻催化是否兑现。"
+            plan_invalidation = "- **失效条件**：若成交额明显萎缩、关键指数跌破短期支撑，或主要催化被证伪，应从进攻转为防守。"
+            risk_heading = "### 七、风险提示"
+            risk_lines = """- **量能回落风险**：放量反弹后若无法继续承接，容易出现冲高回落。
+- **主线误判风险**：指数或板块强弱不等于可交易主线，需要结合新闻催化、成交变化和承接情况持续验证。
+- **消息扰动风险**：外部市场、政策和产业消息变化可能影响风险偏好。
+- 建议仅供参考，不构成投资建议。"""
+
         return f"""## {overview.date} 大盘复盘
 
 > 今日{market_label}市场整体呈现**{market_mood}**态势，盘面状态偏向**{summary_mood}**，优先观察指数承接、成交额变化和板块持续性。
 
 ### 一、盘面总览
-今日盘面核心不是单一指数涨跌，而是宽度、量能和涨跌停结构是否形成共振。上涨占比为 {up_ratio_text}，涨跌停差为 {limit_spread:+d}，成交状态为“{turnover_desc}”，说明短线风险偏好需要结合主线承接来判断。若次日量能保持且高标不明显退潮，行情更容易沿强势方向延续；若量能回落而跌停扩散，则需从进攻转为观察。
+{overview_commentary}
 
 {dashboard_block or "暂无市场宽度数据。"}
 
@@ -1534,42 +1616,33 @@ Market conditions can change quickly. The data above is for reference only and d
 
 {indices_block or indices_text or "暂无指数数据。"}
 
-### 三、板块主线
-行业涨跌榜只能说明资金流向的表层，真正主线还要看概念题材、人气股和涨停梯队是否相互验证。当前行业强项集中在 {top_text or "暂无行业领涨数据"}，概念侧关注 {top_concept_text or "暂无概念领涨数据"}；若两者方向一致，主线持续性更强，若明显背离，则应优先相信人气股和涨停池反馈。弱势方向集中在 {bottom_text or "暂无明显领跌方向"}，短线不宜把被动反弹当成主线切换。
+{sector_heading}
+{sector_commentary}
 
-{sector_block or "- 暂无板块涨跌榜数据。"}
+{sector_block or sector_fallback}
 
-### 四、热门股票与连板
-人气股可以观察资金审美，涨停连板则反映短线情绪高度。当前人气前排包括 {hot_names or "暂无人气榜数据"}，连板结构为 {limit_chain_text}。如果人气中军、题材弹性股和连板高标指向同一方向，说明主线可信度更高；如果高标独强但中军不跟，追高风险会明显增加。
-
-{hot_stock_block or "- 暂无人气股与涨停池数据。"}
-
-### 五、资金与情绪
+{hot_stock_section}{sentiment_heading}
 - **量能观察**：成交额处于“{turnover_desc}”状态，若继续放量且指数不冲高回落，资金承接仍可看作积极。
 - **宽度观察**：上涨占比 {up_ratio_text}，说明赚钱效应的扩散程度需要和主线强度一起验证，不能只看指数涨跌。
-- **情绪观察**：涨跌停差 {limit_spread:+d}，若涨停数量保持但跌停同步增加，意味着高位分歧正在放大。
+{sentiment_observation}
 
-### 六、消息催化
+{news_heading}
 {news_block or "- 暂无可用新闻时，应降低对题材持续性的确定性判断。"}
 
 - **利好线索**：重点观察与 {top_concept_text or top_text or "强势主线"} 相关的政策、产业订单、业绩和海外映射是否继续发酵。
 - **扰动线索**：若外围市场、汇率、商品价格或监管消息出现反向变化，可能削弱风险偏好。
 - **待验证线索**：{news_titles}。
 
-### 七、明日交易计划
+{plan_heading}
 - **结论**：{scorecard['label'] if scorecard else '均衡观察'}，优先等指数、成交额和主线方向形成共振。
 - **仓位**：控制在中性到积极区间，强势日不盲目满仓，分歧日保留机动仓位。
 - **关注方向**：{top_concept_text or top_text or "强于指数的主线板块"}。
 - **回避方向**：{bottom_text or "连续走弱且缺少修复信号的方向"}。
-- **观察锚点**：领涨指数是否继续强于大盘、人气股是否维持前排、连板高度是否继续打开。
-- **失效条件**：若成交额明显萎缩、跌停数量扩散，或人气前排集体冲高回落，应从进攻转为防守。
+{plan_anchor}
+{plan_invalidation}
 
-### 八、风险提示
-- **量能透支风险**：放量大涨后若无法继续承接，容易出现冲高回落。
-- **主线误判风险**：行业涨幅第一不等于真实交易主线，需要持续用概念、人气股和涨停池校验。
-- **高位股分歧风险**：连板高度提升时，若中位股掉队，短线亏钱效应可能快速扩散。
-- **消息扰动风险**：外部市场、政策和产业消息变化可能影响风险偏好。
-- 建议仅供参考，不构成投资建议。
+{risk_heading}
+{risk_lines}
 
 ---
 *复盘时间: {datetime.now().strftime('%H:%M')}*
