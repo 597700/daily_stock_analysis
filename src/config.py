@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -37,6 +38,21 @@ from src.notification_noise import (
 from src.llm import generation_params as llm_generation_params
 
 logger = logging.getLogger(__name__)
+
+_STOCK_LIST_FETCH_BLOCKED_HOSTS = frozenset(
+    {
+        "169.254.169.254",
+        "metadata.google.internal",
+        "100.100.100.200",
+    }
+)
+_STOCK_LIST_FETCH_BLOCKED_IPS = frozenset(
+    ipaddress.ip_address(value)
+    for value in (
+        "169.254.169.254",
+        "100.100.100.200",
+    )
+)
 
 
 @dataclass
@@ -257,26 +273,53 @@ def _parse_stock_list_payload(payload: str) -> List[str]:
         return _normalize_stock_list_values(text)
 
 
+def _is_blocked_stock_list_fetch_ip(ip_address: Any) -> bool:
+    candidates = [ip_address]
+    mapped_ipv4 = getattr(ip_address, "ipv4_mapped", None)
+    if mapped_ipv4 is not None:
+        candidates.append(mapped_ipv4)
+    return any(
+        candidate.is_link_local or candidate in _STOCK_LIST_FETCH_BLOCKED_IPS
+        for candidate in candidates
+    )
+
+
 def _is_safe_stock_list_fetch_url(parsed) -> bool:
     """Block known metadata endpoints before fetching remote watchlists."""
     host = (parsed.hostname or "").strip().lower().rstrip(".")
     if not host:
         return True
 
-    blocked_hosts = frozenset(
-        {
-            "169.254.169.254",
-            "metadata.google.internal",
-            "100.100.100.200",
-        }
-    )
-    if host in blocked_hosts:
+    if host in _STOCK_LIST_FETCH_BLOCKED_HOSTS:
         return False
 
     try:
-        return not ipaddress.ip_address(host).is_link_local
+        return not _is_blocked_stock_list_fetch_ip(ipaddress.ip_address(host))
     except ValueError:
-        return True
+        pass
+
+    try:
+        resolved = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return False
+
+    resolved_hosts = set()
+    for item in resolved:
+        sockaddr = item[4]
+        if not sockaddr:
+            continue
+        resolved_host = str(sockaddr[0]).split("%", 1)[0]
+        if resolved_host in resolved_hosts:
+            continue
+        resolved_hosts.add(resolved_host)
+        try:
+            address = ipaddress.ip_address(resolved_host)
+        except ValueError:
+            return False
+        if _is_blocked_stock_list_fetch_ip(address):
+            return False
+
+    return bool(resolved_hosts)
 
 
 def _fetch_stock_list_from_api(url: Optional[str], *, timeout_seconds: float = 5.0) -> List[str]:

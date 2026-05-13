@@ -2,6 +2,7 @@
 """Tests for backward-compatible config env aliases and TickFlow loading."""
 
 import os
+import socket
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,7 +41,23 @@ class _FakeUrlopenResponse:
 
 
 class ConfigEnvCompatibilityTestCase(unittest.TestCase):
+    def setUp(self):
+        self._getaddrinfo_patcher = patch(
+            "src.config.socket.getaddrinfo",
+            return_value=[
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("93.184.216.34", 443),
+                )
+            ],
+        )
+        self.mock_getaddrinfo = self._getaddrinfo_patcher.start()
+
     def tearDown(self):
+        self._getaddrinfo_patcher.stop()
         Config.reset_instance()
 
     @patch("src.config.setup_env")
@@ -609,6 +626,38 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
             {
                 "STOCK_LIST": "000001,300750",
                 "STOCK_LIST_FETCH_API": "http://169.254.169.254/latest/meta-data",
+            },
+            clear=True,
+        ):
+            config = Config._load_from_env()
+
+        mock_urlopen.assert_not_called()
+        self.assertEqual(config.stock_list, ["000001", "300750"])
+
+    @patch("src.config.setup_env")
+    @patch("src.config.urllib.request.urlopen")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_stock_list_fetch_api_blocks_hostname_resolving_to_metadata_ip(
+        self,
+        _mock_parse_yaml,
+        mock_urlopen,
+        _mock_setup_env,
+    ) -> None:
+        self.mock_getaddrinfo.return_value = [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("169.254.169.254", 80),
+            )
+        ]
+
+        with patch.dict(
+            os.environ,
+            {
+                "STOCK_LIST": "000001,300750",
+                "STOCK_LIST_FETCH_API": "https://watchlist.example/stocks.json",
             },
             clear=True,
         ):
