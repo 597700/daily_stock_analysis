@@ -21,6 +21,13 @@
 
 </div>
 
+## 💬 交流与反馈（官方）
+
+- 群内仅用于项目交流和技术分享，禁止打广告与荐股。
+- 小红书： https://www.xiaohongshu.com/user/profile/60e2bf4600000000010034de
+- 微信群：加小助手 **_oox_xoo** 进群
+- Telegram： https://t.me/+1yyZAGuiiw8xYmQ9
+
 ## 💖 赞助商 (Sponsors)
 <div align="center">
   <p align="center">

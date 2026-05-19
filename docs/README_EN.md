@@ -21,6 +21,13 @@ Analyze your watchlist daily -> generate a decision dashboard -> push to Telegra
 
 English | [简体中文](../README.md) | [繁體中文](README_CHT.md)
 
+## 💬 Community
+
+- Community discussions and technical sharing only; ads and stock-picking recommendations are not allowed.
+- Xiaohongshu: https://www.xiaohongshu.com/user/profile/60e2bf4600000000010034de
+- WeChat group: Add assistant **_oox_xoo** to join
+- Telegram: https://t.me/+1yyZAGuiiw8xYmQ9
+
 </div>
 
 ## 💖 Sponsors

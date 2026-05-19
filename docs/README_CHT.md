@@ -21,6 +21,13 @@
 
 繁體中文 | [English](README_EN.md) | [简体中文](../README.md)
 
+## 💬 官方交流群
+
+- 僅限專案交流與技術分享，請勿發佈廣告與荐股。
+- 小紅書： https://www.xiaohongshu.com/user/profile/60e2bf4600000000010034de
+- 微信群：加小助手 **_oox_xoo** 進群
+- Telegram： https://t.me/+1yyZAGuiiw8xYmQ9
+
 </div>
 
 ## 💖 贊助商 (Sponsors)

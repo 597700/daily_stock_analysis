@@ -16,6 +16,14 @@
 
 ## 🔧 提交代码
 
+### 交流群
+
+欢迎加入官方交流群，进行项目讨论和经验分享。群内仅限项目相关与技术交流，**禁止打广告与荐股**。
+
+- 小红书： https://www.xiaohongshu.com/user/profile/60e2bf4600000000010034de
+- 微信群：加小助手 **_oox_xoo** 进群
+- Telegram： https://t.me/+1yyZAGuiiw8xYmQ9
+
 ### 开发环境
 
 ```bash
