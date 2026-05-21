@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [chore] 清理 Pydantic v2 弃用写法并在 Web 路由层启用 lazy load + manualChunks，减少 pytest / Vite 告警并提升首屏体积。
+- [文档] 本次改动仅涉及 API Schema 与 Web 路由分包，未修改 LLM model/provider/Base URL 或运行时配置清理/迁移逻辑；因此不会清空用户配置，不会触发模型/Provider/Base URL 自动迁移，回退路径为回滚该提交或恢复配置到提交前快照。
+- [测试] 新增 schema 回归，验证 AnalyzeRequest 仍兼容 legacy `strategies` 字段，并确认 schema 生成阶段无 Pydantic 废弃告警。
 
 ## [3.18.0] - 2026-05-21
 
