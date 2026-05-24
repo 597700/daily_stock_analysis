@@ -10,7 +10,7 @@
 
 ## 当前文档范围（本轮）
 
-- 本文件为 Phase 0 合同与验收边界文档，当前 PR 同时包含最小运行时兼容修复：`data_provider/baostock_fetcher.py`、`data_provider/pytdx_fetcher.py`、`data_provider/tushare_fetcher.py` 的 A 股裸码归属边界补齐，配套由 `tests/test_a_share_fetcher_code_conversion.py` 做回归确认。
+- 本文件为 Phase 0 合同与验收边界文档，当前 PR 为 docs + runtime fix，本轮同步补齐 `baostock_fetcher.py`、`pytdx_fetcher.py`、`tushare_fetcher.py` 的 A 股裸码归属边界，并配套由 `tests/test_a_share_fetcher_code_conversion.py` 做回归验证。
 - 若无新 Token/模型提供商/接口映射要求，本轮不扩展 Tushare `600/601/603/688` 外规则（如 `605xxx`）；该问题继续由后续专门 PR 跟进。
 
 ## 非目标
@@ -77,8 +77,11 @@
 
 ### 验证与沟通边界（本轮）
 
-- PR 触及后端数据源代码，描述与交付范围不再标注为“docs-only / 未执行测试”；需以实际测试状态为准说明是否已执行回归验证。
-- 本轮未引入新配置项，无需更新 `.env.example`；回滚方式为回退对应 provider 修复提交并恢复既有归一化逻辑。
+- PR 触及后端数据源代码，不再标注为“docs-only”；本轮为 docs + runtime fix。
+- PR 合并前需以实际状态说明回归测试执行结果：`python -m pytest tests/test_a_share_fetcher_code_conversion.py` 与 `./scripts/ci_gate.sh`（至少需给出两者的成功/未执行原因及截图/日志）。
+- 回滚方式为回退对应 `data_provider/baostock_fetcher.py`、`data_provider/pytdx_fetcher.py`、`data_provider/tushare_fetcher.py` 的本轮变更；如需最小风险处置，可直接还原该轮提交。
+- 本轮未改动 LLM provider 列表、Base URL、`llm_call` 迁移路径和运行时配置语义，避免扩展到模型路由兼容面。
+- 本轮需先确认无未解决 merge conflict；若存在冲突，需先清理后再以最终 head 重新确认 diff 与验证记录。
 
 ## Phase 0 交付清单
 

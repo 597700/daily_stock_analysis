@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 新增 #1391 Phase 0 运行诊断契约文档，明确 trace_id、诊断摘要、关键链路范围与脱敏/fail-open/retention 边界。
 - [改进] Web 路由页面改为按需加载，降低首包体积并增加路由加载失败恢复提示。
 - [修复] Docker 默认部署移除 `.env` 单文件挂载，避免 WebUI 保存配置时因 `os.replace` 更新挂载点触发 `Device or resource busy`。
-- [文档] 明确 #1391 Phase 0 边界：本轮同步约束为诊断契约 + A 股代码归属最小运行时修复（baostock/pytdx/tushare），未变更 provider 列表、模型 provider/base URL/`llm_call` 配置迁移语义，Tushare 等数据源的 605xxx 等分支需在后续 PR 跟进。
+- [文档] 明确 #1391 Phase 0 为 docs + runtime fix：补齐 baostock/pytdx/tushare A 股代码归属最小修复边界，约定 PR 说明需同步列出回归验证命令（`python -m pytest tests/test_a_share_fetcher_code_conversion.py`、`./scripts/ci_gate.sh`）与回滚方式，同时声明未改 provider 列表、模型 provider/base URL/`llm_call` 配置迁移语义，后续 `605xxx` 等规则留待后续 PR 跟进。
 
 ## [3.18.0] - 2026-05-21
 
