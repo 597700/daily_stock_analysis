@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 新增 #1391 Phase 0 运行诊断契约文档，明确 trace_id、诊断摘要、关键链路范围与脱敏/fail-open/retention 边界。
 - [改进] Web 路由页面改为按需加载，降低首包体积并增加路由加载失败恢复提示。
 - [修复] Docker 默认部署移除 `.env` 单文件挂载，避免 WebUI 保存配置时因 `os.replace` 更新挂载点触发 `Device or resource busy`。
-- [文档] 明确 #1391 Phase 0 为 docs + runtime fix：补齐 baostock/pytdx/tushare A 股代码归属边界（含 `SH000001`/`SH.000001`/`SZ000001`/`SZ.000001` 前缀场景），约定 PR 说明须与 runtime diff 对齐并显式标注 `Fixes/Refs #1391`、`python -m pytest tests/test_a_share_fetcher_code_conversion.py`、`./scripts/ci_gate.sh` 结果与回滚策略；未改 provider 列表、`Base URL`、`llm_call` 迁移语义，后续 `605xxx` 等规则留待后续 PR 跟进。
-- [文档] 若 PR 与目标分支存在 `merge conflict`，本轮变更不得直接合入；需先清理冲突并以最终 head 复核 diff，补齐回归日志，再补充是否存在未落库边界例外（含 SH/SZ 前缀归属）。
+- [文档] 明确 #1391 Phase 0 合并前门禁：PR 标题建议使用 `fix:`，描述需与 runtime diff 对齐，不得再写成 docs-only；须显式标注 `Fixes #1391`，列出 `data_provider/baostock_fetcher.py`、`data_provider/pytdx_fetcher.py`、`data_provider/tushare_fetcher.py` 的改动点、`python -m pytest tests/test_a_share_fetcher_code_conversion.py` 与 `./scripts/ci_gate.sh` 回归结论、冲突清理与回滚说明；未改 provider 列表、`Base URL`、`llm_call` 迁移语义，后续 `605xxx` 等规则留待后续 PR 跟进。
+- [文档] 若发现 merge conflict 或 `SH/SZ` 前缀归属 blocker（`SH000001`、`SH.000001`、`SZ000001`、`SZ.000001`）未在 runtime 改动与回归中清零，本轮不得直接合入；本条为本次审阅前置合并约束说明。
 
 ## [3.18.0] - 2026-05-21
 
