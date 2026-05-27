@@ -46,6 +46,10 @@ from src.report_language import (
 )
 from src.search_service import SearchService
 from src.services.social_sentiment_service import SocialSentimentService
+from src.services.analysis_context_builder import (
+    AnalysisContextBuilder,
+    PipelineAnalysisArtifacts,
+)
 from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     current_diagnostic_snapshot,
@@ -507,6 +511,28 @@ class StockAnalysisPipeline:
                 fundamental_context,
             )
             enhanced_context["market_phase_context"] = market_phase_context_dict
+
+            legacy_artifacts = self._build_legacy_analysis_artifacts(
+                code=code,
+                stock_name=stock_name,
+                market=market,
+                market_phase_context=market_phase_context_dict,
+                base_context=context,
+                enhanced_context=enhanced_context,
+                realtime_quote=realtime_quote,
+                trend_result=trend_result,
+                chip_data=chip_data,
+                fundamental_context=fundamental_context,
+                news_context=news_context,
+                news_result_count=news_result_count,
+                query_id=query_id,
+            )
+            analyzer_context = dict(enhanced_context)
+            pack_summary = self._build_analysis_context_pack_summary(
+                legacy_artifacts,
+            )
+            if pack_summary is not None:
+                analyzer_context["analysis_context_pack_summary"] = pack_summary
             
             # Step 7: 调用 AI 分析（传入增强的上下文和新闻）
             llm_progress_state = {"last_progress": 64}
@@ -525,7 +551,7 @@ class StockAnalysisPipeline:
             llm_started_at = time.monotonic()
             try:
                 result = self.analyzer.analyze(
-                    enhanced_context,
+                    analyzer_context,
                     news_context=news_context,
                     progress_callback=self._emit_progress,
                     stream_progress_callback=_on_llm_stream,
@@ -889,6 +915,7 @@ class StockAnalysisPipeline:
         try:
             from src.agent.factory import build_agent_executor
             report_language = normalize_report_language(getattr(self.config, "report_language", "zh"))
+            market = get_market_for_stock(normalize_stock_code(code))
 
             requested_skills = (
                 self.analysis_skills
@@ -934,6 +961,19 @@ class StockAnalysisPipeline:
                 except Exception as e:
                     logger.warning(f"[{code}] Agent mode: social sentiment fetch failed: {e}")
 
+            agent_artifacts = self._build_agent_analysis_artifacts(
+                code=code,
+                stock_name=stock_name,
+                market=market,
+                market_phase_context=market_phase_context,
+                query_id=query_id,
+                initial_context=initial_context,
+            )
+            agent_context = dict(initial_context)
+            pack_summary = self._build_analysis_context_pack_summary(agent_artifacts)
+            if pack_summary is not None:
+                agent_context["analysis_context_pack_summary"] = pack_summary
+
             # Issue #1066: ensure deep history is in DB before agent tools run
             self._ensure_agent_history(code)
 
@@ -944,7 +984,7 @@ class StockAnalysisPipeline:
                 message = f"请分析股票 {code} ({stock_name})，并生成决策仪表盘报告。"
             llm_started_at = time.monotonic()
             try:
-                agent_result = executor.run(message, context=initial_context)
+                agent_result = executor.run(message, context=agent_context)
             except Exception as exc:
                 record_llm_run(
                     success=False,
@@ -1773,6 +1813,101 @@ class StockAnalysisPipeline:
                 )
             except Exception as exc:
                 logger.warning("回写通知诊断快照失败（fail-open）: %s", exc)
+
+    def _build_legacy_analysis_artifacts(
+        self,
+        *,
+        code: str,
+        stock_name: str,
+        market: str,
+        market_phase_context: Optional[Dict[str, Any]],
+        base_context: Dict[str, Any],
+        enhanced_context: Dict[str, Any],
+        realtime_quote: Optional[Any],
+        trend_result: Optional[TrendAnalysisResult],
+        chip_data: Optional[ChipDistribution],
+        fundamental_context: Optional[Dict[str, Any]],
+        news_context: Optional[str],
+        news_result_count: Optional[int],
+        query_id: Optional[str] = None,
+    ) -> PipelineAnalysisArtifacts:
+        return PipelineAnalysisArtifacts(
+            code=code,
+            stock_name=stock_name,
+            market=market,
+            phase=market_phase_context,
+            base_context=dict(base_context),
+            enhanced_context=dict(enhanced_context),
+            realtime_quote=realtime_quote,
+            trend_result=trend_result,
+            chip_data=chip_data,
+            fundamental_context=fundamental_context,
+            news_context=news_context,
+            news_result_count=news_result_count,
+            metadata={
+                "query_id": query_id,
+                "query_source": self.query_source,
+                "analysis_path": "legacy",
+            },
+        )
+
+    def _build_agent_analysis_artifacts(
+        self,
+        *,
+        code: str,
+        stock_name: str,
+        market: str,
+        market_phase_context: Optional[Dict[str, Any]],
+        query_id: Optional[str],
+        initial_context: Dict[str, Any],
+    ) -> PipelineAnalysisArtifacts:
+        market_session_date = (
+            market_phase_context.get("session_date")
+            if isinstance(market_phase_context, dict)
+            else None
+        )
+        session_date = market_session_date or get_market_now(market).date().isoformat()
+        return PipelineAnalysisArtifacts(
+            code=code,
+            stock_name=stock_name,
+            market=market,
+            phase=market_phase_context,
+            base_context={
+                "code": code,
+                "stock_name": stock_name,
+                "date": session_date,
+                "data_missing": True,
+                "today": {},
+                "yesterday": {},
+            },
+            enhanced_context={},
+            realtime_quote=initial_context.get("realtime_quote"),
+            trend_result=initial_context.get("trend_result"),
+            chip_data=initial_context.get("chip_distribution"),
+            fundamental_context=initial_context.get("fundamental_context"),
+            news_context=initial_context.get("news_context"),
+            news_result_count=None,
+            metadata={
+                "query_id": query_id,
+                "query_source": self.query_source,
+                "analysis_path": "agent",
+                "agent_zero_fetch": True,
+            },
+        )
+
+    def _build_analysis_context_pack_summary(
+        self,
+        artifacts: PipelineAnalysisArtifacts,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            return AnalysisContextBuilder.build(artifacts).to_safe_dict()
+        except Exception as exc:
+            logger.warning(
+                "构建 analysis_context_pack_summary 失败: code=%s, error=%s",
+                artifacts.code,
+                exc,
+            )
+            return None
 
     @staticmethod
     def _without_market_phase_context(context: Dict[str, Any]) -> Dict[str, Any]:

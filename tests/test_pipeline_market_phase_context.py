@@ -157,6 +157,7 @@ class PipelineMarketPhaseContextTestCase(unittest.TestCase):
         self.assertTrue(save_kwargs["save_snapshot"])
         snapshot = save_kwargs["context_snapshot"]
         self.assertNotIn("market_phase_context", snapshot["enhanced_context"])
+        self.assertNotIn("analysis_context_pack_summary", snapshot["enhanced_context"])
 
     def test_agent_legacy_context_gets_runtime_key_but_history_snapshot_strips_it(self):
         pipeline = _make_pipeline(agent_mode=True, save_context_snapshot=True)
@@ -201,7 +202,80 @@ class PipelineMarketPhaseContextTestCase(unittest.TestCase):
         self.assertTrue(save_kwargs["save_snapshot"])
         self.assertNotIn("market_phase_context", save_kwargs["context_snapshot"])
         enhanced_context = save_kwargs["context_snapshot"]["enhanced_context"]
+        self.assertNotIn("analysis_context_pack_summary", enhanced_context)
         self.assertEqual(enhanced_context["stock_name"], "贵州茅台")
+
+    def test_legacy_artifacts_keep_full_payload_mappings(self):
+        pipeline = _make_pipeline(agent_mode=False, save_context_snapshot=False)
+        base_context = {
+            "code": "600519",
+            "stock_name": "贵州茅台",
+            "date": "2026-03-27",
+            "today": {"close": 10.2},
+            "yesterday": {"close": 9.8},
+        }
+        enhanced_context = {
+            "today": {"close": 10.2, "data_source": "realtime:ak"},
+            "market_phase_context": {"phase": "intraday"},
+            "fundamental_context": {"status": "ok"},
+        }
+
+        artifacts = pipeline._build_legacy_analysis_artifacts(
+            code="600519",
+            stock_name="贵州茅台",
+            market="cn",
+            market_phase_context={"phase": "intraday"},
+            base_context=base_context,
+            enhanced_context=enhanced_context,
+            realtime_quote={"price": 10.2},
+            trend_result={"trend_status": "up"},
+            chip_data={"profit_ratio": 0.45},
+            fundamental_context={"status": "ok"},
+            news_context="news summary",
+            news_result_count=3,
+            query_id="q-legacy",
+        )
+        self.assertEqual(artifacts.code, "600519")
+        self.assertEqual(artifacts.stock_name, "贵州茅台")
+        self.assertEqual(artifacts.market, "cn")
+        self.assertEqual(artifacts.base_context, base_context)
+        self.assertEqual(artifacts.enhanced_context, enhanced_context)
+        self.assertEqual(artifacts.news_context, "news summary")
+        self.assertEqual(artifacts.news_result_count, 3)
+        self.assertEqual(artifacts.phase, {"phase": "intraday"})
+        self.assertEqual(artifacts.metadata["analysis_path"], "legacy")
+
+    def test_agent_artifacts_keep_zero_fetch_contract(self):
+        pipeline = _make_pipeline(agent_mode=True, save_context_snapshot=False)
+        initial_context = {
+            "stock_code": "600519",
+            "stock_name": "贵州茅台",
+            "report_type": "SIMPLE",
+            "report_language": "zh",
+            "fundamental_context": {"status": "ok"},
+            "realtime_quote": {"price": 10.2},
+            "chip_distribution": {"profit_ratio": 0.45},
+            "trend_result": {"trend_status": "up"},
+            "news_context": "agent news",
+        }
+        artifacts = pipeline._build_agent_analysis_artifacts(
+            code="600519",
+            stock_name="贵州茅台",
+            market="cn",
+            market_phase_context={"session_date": "2026-03-27"},
+            query_id="q-agent",
+            initial_context=initial_context,
+        )
+        self.assertEqual(artifacts.code, "600519")
+        self.assertEqual(artifacts.stock_name, "贵州茅台")
+        self.assertEqual(artifacts.market, "cn")
+        self.assertEqual(artifacts.base_context["code"], "600519")
+        self.assertEqual(artifacts.base_context["date"], "2026-03-27")
+        self.assertEqual(artifacts.enhanced_context, {})
+        self.assertIsNone(artifacts.news_result_count)
+        self.assertEqual(artifacts.news_context, "agent news")
+        self.assertEqual(artifacts.metadata["analysis_path"], "agent")
+        self.assertTrue(artifacts.metadata["agent_zero_fetch"])
 
     def test_agent_history_snapshot_contains_diagnostics_context_when_active(self):
         pipeline = _make_pipeline(agent_mode=True, save_context_snapshot=True)
