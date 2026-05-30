@@ -26,9 +26,11 @@ For English contributors: please fill in English. All fields marked (EN) accept 
 
 ### PR 元信息与验收边界
 
-- [ ] **仅说明边界，不新增 runtime 行为**：本 PR 为文档/治理说明，不承担 `SCHEDULE_TIME` 或其他运行时能力交付。
+以下内容仅适用于 **docs/governance-only** PR，非 docs/governance PR 可跳过：
+
+- [ ] **仅说明边界，不新增 runtime 行为**：说明性 PR 不承担 `SCHEDULE_TIME` 或其他运行时能力交付。
 - [ ] **docs-only 自检清单**：边界说明与实际行为一致、双语文档同步、`docs/CHANGELOG.md` 同步（如涉及用户可见文档）；
-- [ ] **Issue 链接语义正确**：仅 docs/治理范围请使用 `Refs #<issue_number>`（或无 issue 说明），并将 PR 类型限定为 `docs`，避免误关闭 Issue。
+- [ ] **Issue 链接语义正确**：文档/治理说明类 PR 请使用 `Refs #<issue_number>`（或无 issue 说明），并将 PR 类型限定为 `docs`，避免误关闭 Issue。
 
 
 ## Issue Link
