@@ -104,7 +104,6 @@ OpenAI-compatible Base URL 只填到服务商兼容入口，不额外拼接 `/ch
 - 运行时模型名通常写成 `openai/<model>`；例如自定义网关里的 `gpt-5.5` 可以作为 `openai/gpt-5.5` 被 LiteLLM 路由。
 - `Qwen/...`、`deepseek-ai/...` 这类是服务商或模型仓库组织名前缀，不等同于 LiteLLM provider prefix；不要因为它们包含斜杠就误判为 `provider/model` 路由。
 - Base URL 只填官方或网关给出的兼容入口，通常到 `/v1`、`/api/v3` 或厂商文档指定路径；不要手动追加 `/chat/completions`。
-- Base URL 会在配置保存和 `/models` 发现前校验解析安全性；不支持空白/控制字符、反斜杠、`userinfo@host`、非规范 IPv4 数字别名或指向 metadata/link-local 的地址。常见兼容地址仍可使用（如 `https://api.openai.com/v1`、`https://api.deepseek.com`、`https://api.siliconflow.cn/v1`、`https://dashscope.aliyuncs.com/compatible-mode/v1`、`http://127.0.0.1:11434`）。若出现 `invalid_url`，请清理该 `LLM_<CHANNEL>_BASE_URL`（设为空或移除），重试保存后再按账号权限运行测试。
 - 如果使用 YAML 模式，按 LiteLLM `model_list` / `litellm_params` 的原生语义配置；YAML 有效时优先级高于 Channels。
 
 ## GitHub Actions 配置

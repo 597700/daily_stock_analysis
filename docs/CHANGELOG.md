@@ -19,8 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Windows 安装器重试旧卸载器时对 `_?=` 安装目录参数加引号，修复旧版本安装在带空格路径时返回 2 导致自动更新失败。
 - [修复] Windows 桌面端自动更新传给 NSIS 的 `/D=` 目录参数在包含空格时自动加引号，避免安装位置注册表被截断。
 
-- [修复] 加固 LLM channel base_url 校验，拒绝反斜杠、空白/控制字符、userinfo、非规范 IPv4 数字别名和 metadata/link-local 映射地址，避免解析差异导致 SSRF 绕过。
-- [文档] 精简 `docs/llm-providers.md` base_url 安全限制与 `invalid_url` 恢复说明。
+- [修复] 加固 LLM channel base_url 校验，避免解析差异导致 SSRF 绕过。
 
 ## [3.19.0] - 2026-05-29
 
@@ -75,6 +74,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 新增 AnalysisContextPack P0 上下文盘点，明确字段质量状态、现有状态映射和首版 pack 边界。
 - 明确 #1391 Phase 2 的结构化检测告警为非配置迁移信号：`agent_max_steps`/`agent_orchestrator_timeout_s` 非法值会 fallback 至默认并产生日志告警，新增诊断链路仅新增 `context_snapshot`/`RunDiagnosticSummary` 读写字段，不改写 `litellm_model`、`agent_litellm_model`、`openai_base_url`、LLM channel 路由或配置迁移语义。
 - 补充 #1391 Phase 3 兼容性说明：记录后端诊断持久化、历史查询与通知回写链路变更边界与回滚策略，并补齐后端门禁级验证要求。
+
+### 测试
+
+- 收敛 #1391 Phase 3 后端/API 与 Web 回归检查：`./scripts/ci_gate.sh`、`test_pipeline_market_phase_context.py`、`test_analysis_api_contract.py`、`test_analysis_history.py`、`npm run lint`、`npm run build`。
+- 执行 `python -c "import exchange_calendars as xcals; xcals.get_calendar('XSHG'); print('ok')"` 通过验证，以覆盖导入与交易日历初始化兼容性。
 
 ## [3.18.0] - 2026-05-21
 
