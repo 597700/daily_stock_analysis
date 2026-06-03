@@ -72,15 +72,85 @@ const getFactorEntries = (item: AlphaSiftCandidate) =>
 const toMessageList = (values: string[] | undefined) =>
   Array.isArray(values) ? values.map((value) => String(value).trim()).filter(Boolean) : [];
 
-const normalizeScreenMessageKey = (value: string) =>
-  value.replace(/^Snapshot source fallback:\s*/i, '').trim();
+const KNOWN_SNAPSHOT_SOURCES = new Set(['tushare', 'efinance', 'akshare_em', 'em_datacenter', 'baostock']);
+const MAX_MESSAGE_DETAIL_LENGTH = 96;
+
+const truncateMessageDetail = (value: string, maxLength = MAX_MESSAGE_DETAIL_LENGTH) => {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
+};
+
+const summarizeAlphaSiftDiagnostic = (detail: string) => {
+  if (/trade_cal returned no open trading days/i.test(detail)) {
+    return '交易日历暂无可用开市日';
+  }
+  if (/too many requests|rate limit|http\s*429/i.test(detail)) {
+    return '请求过于频繁';
+  }
+  if (/403 forbidden|forbidden|access denied/i.test(detail)) {
+    return '访问被拒绝';
+  }
+  if (/timeout|timed out/i.test(detail)) {
+    return '请求超时';
+  }
+  if (/RemoteDisconnected|Connection aborted|ProtocolError|ConnectionPool|Max retries exceeded|ProxyError|NameResolutionError/i.test(detail)) {
+    return '网络连接中断';
+  }
+  if (/missing .*api key|GEMINI_API_KEY|GOOGLE_API_KEY|gemini_api_key/i.test(detail)) {
+    return '缺少可用 LLM API Key';
+  }
+  if (/returned no data|empty/i.test(detail)) {
+    return '未返回可用数据';
+  }
+
+  const withoutUrl = detail
+    .replace(/https?:\/\/\S+/gi, 'URL')
+    .replace(/\bwith url:\s*\S+/gi, 'with url: URL')
+    .replace(/\burl:\s*\S+/gi, 'url: URL');
+  return truncateMessageDetail(withoutUrl);
+};
+
+const parseSourceDiagnostic = (value: string) => {
+  const match = value.match(/^([a-zA-Z0-9_-]+)\s*[:：]\s*(.+)$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    source: match[1],
+    detail: match[2],
+  };
+};
+
+const normalizeScreenMessageKey = (value: string) => {
+  const formatted = formatScreenMessage(value);
+  return formatted ? formatted.trim().toLowerCase() : value.trim().toLowerCase();
+};
 
 const formatScreenMessage = (value: string) => {
+  if (/^DSA provider context applied \d+ of \d+ candidates/i.test(value)) {
+    return '';
+  }
+  if (/^LLM ranking failed/i.test(value)) {
+    return `LLM 重排失败：${summarizeAlphaSiftDiagnostic(value)}，已回退到本地因子评分。`;
+  }
+
   const snapshotFallback = value.match(/^Snapshot source fallback:\s*(.+)$/i);
   if (snapshotFallback) {
-    return `数据源降级：${snapshotFallback[1]}`;
+    const parsed = parseSourceDiagnostic(snapshotFallback[1]);
+    if (parsed) {
+      return `数据源降级：${parsed.source}（${summarizeAlphaSiftDiagnostic(parsed.detail)}）`;
+    }
+    return `数据源降级：${summarizeAlphaSiftDiagnostic(snapshotFallback[1])}`;
   }
-  return value;
+
+  const parsed = parseSourceDiagnostic(value);
+  if (parsed && KNOWN_SNAPSHOT_SOURCES.has(parsed.source.toLowerCase())) {
+    return `数据源降级：${parsed.source}（${summarizeAlphaSiftDiagnostic(parsed.detail)}）`;
+  }
+  return truncateMessageDetail(value);
 };
 
 const getScreenMessages = (meta: AlphaSiftScreenResponse | null) => {
@@ -95,11 +165,28 @@ const getScreenMessages = (meta: AlphaSiftScreenResponse | null) => {
       if (seen.has(key)) {
         return;
       }
+      const message = formatScreenMessage(value);
+      if (!message) {
+        return;
+      }
       seen.add(key);
-      messages.push(formatScreenMessage(value));
+      messages.push(message);
     },
   );
   return messages;
+};
+
+const ScreenAlertMessage: React.FC<{ messages: string[] }> = ({ messages }) => {
+  if (messages.length <= 1) {
+    return <span>{messages[0]}</span>;
+  }
+  return (
+    <ul className="list-disc space-y-1 pl-4">
+      {messages.map((message) => (
+        <li key={message}>{message}</li>
+      ))}
+    </ul>
+  );
 };
 
 const hasLlmInsight = (item: AlphaSiftCandidate) =>
@@ -133,9 +220,11 @@ const StockScreeningPage: React.FC = () => {
   const displayedStrategy = selectedStrategy ? selectedStrategyTitle : `自定义策略 (${strategy})`;
   const screenMessages = useMemo(() => getScreenMessages(screenMeta), [screenMeta]);
   const llmDegraded = screenMeta?.llmRanked === false;
-  const llmDegradationMessage = llmDegraded
-    ? screenMessages.join('；') || 'LLM 重排未完成或未返回判断，当前候选来自 AlphaSift 本地因子评分。'
-    : '';
+  const alertMessages = llmDegraded
+    ? screenMessages.length > 0
+      ? screenMessages
+      : ['LLM 重排未完成或未返回判断，当前候选来自 AlphaSift 本地因子评分。']
+    : screenMessages;
 
   const clearScreeningResults = () => {
     setCandidates([]);
@@ -421,11 +510,11 @@ const StockScreeningPage: React.FC = () => {
         </div>
       </section>
 
-      {screenMeta && (screenMessages.length > 0 || llmDegradationMessage) ? (
+      {screenMeta && alertMessages.length > 0 ? (
         <InlineAlert
           variant={llmDegraded ? 'warning' : 'info'}
           title={llmDegraded ? 'LLM 已降级' : 'AlphaSift 提示'}
-          message={llmDegradationMessage || screenMessages.join('；')}
+          message={<ScreenAlertMessage messages={alertMessages} />}
         />
       ) : null}
 

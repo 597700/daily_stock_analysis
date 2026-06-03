@@ -226,7 +226,8 @@ describe('StockScreeningPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /运行选股/ }));
 
     expect(await screen.findByText('LLM 已降级')).toBeInTheDocument();
-    expect(screen.getByText(/Missing gemini_api_key/)).toBeInTheDocument();
+    expect(screen.getByText(/缺少可用 LLM API Key/)).toBeInTheDocument();
+    expect(screen.queryByText(/Missing gemini_api_key/)).not.toBeInTheDocument();
     expect(screen.getByText('未重排')).toBeInTheDocument();
     expect(screen.getByText('本次 LLM 重排失败或未返回判断，当前展示的是本地因子评分结果。')).toBeInTheDocument();
     expect(screen.getByText('LLM 元数据未返回')).toBeInTheDocument();
@@ -264,8 +265,47 @@ describe('StockScreeningPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /运行选股/ }));
 
     expect(await screen.findByText('AlphaSift 提示')).toBeInTheDocument();
-    expect(screen.getAllByText(/tushare trade_cal returned no open trading days/)).toHaveLength(1);
-    expect(screen.getByText(/数据源降级：tushare/)).toBeInTheDocument();
+    expect(screen.getAllByText('数据源降级：tushare（交易日历暂无可用开市日）')).toHaveLength(1);
+    expect(screen.queryByText(/trade_cal returned no open trading days/)).not.toBeInTheDocument();
+  });
+
+  it('sanitizes long AlphaSift source diagnostics and keeps the alert constrained', async () => {
+    getAlphaSiftStatus.mockResolvedValueOnce({
+      enabled: true,
+      available: true,
+      installSpecIsDefault: true,
+    });
+    screenStocks.mockResolvedValueOnce({
+      enabled: true,
+      candidates: [
+        {
+          rank: 1,
+          code: '600016',
+          name: '民生银行',
+          score: 80.12,
+          raw: {},
+        },
+      ],
+      candidateCount: 1,
+      llmRanked: true,
+      warnings: [
+        "Snapshot source fallback: efinance: HTTPConnectionPool(host='push2.eastmoney.com', port=80): Max retries exceeded with url: /api/qt/clist/get?pn=1&pz=200&po=1&fields=f12%2Cf14%2Cf2%2Cf3 (Caused by ProtocolError('Connection aborted.', RemoteDisconnected('Remote end closed connection without response')))",
+        "Snapshot source fallback: akshare_em: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))",
+      ],
+    });
+
+    render(<StockScreeningPage />);
+
+    expect(await screen.findByText('选股已开启')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /运行选股/ }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveClass('max-w-full');
+    expect(screen.getByText('数据源降级：efinance（网络连接中断）')).toBeInTheDocument();
+    expect(screen.getByText('数据源降级：akshare_em（网络连接中断）')).toBeInTheDocument();
+    expect(screen.queryByText(/HTTPConnectionPool/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\/api\/qt\/clist\/get/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/RemoteDisconnected/)).not.toBeInTheDocument();
   });
 
   it('shows DSA enrichment summary, news, and enrichment metadata', async () => {
