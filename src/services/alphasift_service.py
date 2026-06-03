@@ -894,6 +894,15 @@ def _enrich_candidates_with_dsa(candidates: List[Dict[str, Any]]) -> Tuple[List[
     for index, candidate in enumerate(candidates):
         if index >= limit:
             continue
+        existing_context = candidate.get("dsa_context")
+        if isinstance(existing_context, dict) and existing_context.get("enriched"):
+            enriched_count += 1
+            existing_warnings = existing_context.get("warnings") or []
+            if isinstance(existing_warnings, list):
+                warnings.extend(str(item) for item in existing_warnings if item)
+            elif existing_warnings:
+                warnings.append(str(existing_warnings))
+            continue
         try:
             enriched = _build_dsa_candidate_context(candidate)
             candidate.update(enriched)
@@ -1115,6 +1124,9 @@ def _normalize_candidate(raw: Any, rank: int) -> Dict[str, Any]:
         "amount": _first_present(item, source, "amount"),
         "industry": item.get("industry") or source.get("industry") or "",
         "factor_scores": item.get("factor_scores") or source.get("factor_scores") or {},
+        "dsa_context": item.get("dsa_context") or source.get("dsa_context") or {},
+        "dsa_news": item.get("dsa_news") or source.get("dsa_news") or [],
+        "dsa_analysis_summary": item.get("dsa_analysis_summary") or source.get("dsa_analysis_summary") or "",
         "post_analysis_summaries": item.get("post_analysis_summaries") or source.get("post_analysis_summaries") or {},
         "post_analysis_tags": item.get("post_analysis_tags") or source.get("post_analysis_tags") or [],
         "raw": source,

@@ -558,6 +558,53 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertIn("DSA行情", candidate["dsa_analysis_summary"])
         self.assertEqual(payload["dsa_enrichment"]["enriched_count"], 1)
 
+    def test_screen_reuses_alphasift_dsa_context_without_refetch(self) -> None:
+        config = self._config(enabled=True)
+        fake_module = _make_adapter_module(
+            screen=MagicMock(
+                return_value={
+                    "candidates": [
+                        {
+                            "code": "600519",
+                            "name": "贵州茅台",
+                            "score": 88.5,
+                            "dsa_context": {
+                                "enriched": True,
+                                "quote": {"price": 1688.0, "change_pct": 1.2},
+                                "warnings": ["from_alphasift_provider"],
+                            },
+                            "dsa_news": [{"title": "贵州茅台最新公告", "source": "测试源"}],
+                            "dsa_analysis_summary": "DSA新闻: 贵州茅台最新公告",
+                        }
+                    ]
+                }
+            ),
+        )
+
+        with (
+            patch("src.services.alphasift_service._import_alphasift", return_value=fake_module),
+            patch("src.services.alphasift_service.get_dsa_realtime_quote") as quote_mock,
+            patch("src.services.alphasift_service.get_dsa_fundamental_context") as fundamentals_mock,
+            patch("src.services.alphasift_service.search_dsa_stock_news") as news_mock,
+        ):
+            payload = self._screen(
+                config,
+                market="cn",
+                strategy="dual_low",
+                max_results=5,
+                mock_enrichment=False,
+            )
+
+        candidate = payload["candidates"][0]
+        self.assertTrue(candidate["dsa_context"]["enriched"])
+        self.assertEqual(candidate["dsa_news"][0]["title"], "贵州茅台最新公告")
+        self.assertEqual(candidate["dsa_analysis_summary"], "DSA新闻: 贵州茅台最新公告")
+        self.assertEqual(payload["dsa_enrichment"]["enriched_count"], 1)
+        self.assertEqual(payload["dsa_enrichment"]["warnings"], ["from_alphasift_provider"])
+        quote_mock.assert_not_called()
+        fundamentals_mock.assert_not_called()
+        news_mock.assert_not_called()
+
     def test_screen_bridges_dsa_llm_config_into_alphasift_runtime(self) -> None:
         config = Config(
             alphasift_enabled=True,
