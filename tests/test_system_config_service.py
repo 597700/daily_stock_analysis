@@ -169,6 +169,19 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertNotIn("LLM_UNUSED_API_KEY", raw_items)
         self.assertNotIn("UNRELATED_API_KEY", raw_items)
 
+    def test_get_config_switch_type_uses_runtime_env_display_fallback(self) -> None:
+        self._rewrite_env(
+            "STOCK_LIST=600519",
+            "LOG_LEVEL=INFO",
+        )
+
+        with patch.dict(os.environ, {"REPORT_SHOW_LLM_MODEL": "false"}, clear=False):
+            payload = self.service.get_config(include_schema=True)
+
+        items = {item["key"]: item for item in payload["items"]}
+        self.assertEqual(items["REPORT_SHOW_LLM_MODEL"]["value"], "false")
+        self.assertFalse(items["REPORT_SHOW_LLM_MODEL"]["raw_value_exists"])
+
     def test_get_config_with_schema_hides_unregistered_env_keys(self) -> None:
         self._rewrite_env(
             "STOCK_LIST=600519,000001",

@@ -273,6 +273,9 @@ class SystemConfigService:
         if raw_value_exists:
             return raw_value
 
+        if field_schema.get("ui_control") == "switch" and raw_value:
+            return raw_value
+
         if field_schema.get("ui_control") == "switch":
             default_value = field_schema.get("default_value")
             if isinstance(default_value, str) and default_value:
