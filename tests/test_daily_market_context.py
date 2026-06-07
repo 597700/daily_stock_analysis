@@ -181,6 +181,60 @@ def test_does_not_reuse_same_day_history_on_report_language_mismatch() -> None:
     run_review.assert_called_once()
 
 
+def test_query_scoped_fallback_reuses_current_run_runtime_cache() -> None:
+    db = MagicMock()
+    db.get_analysis_history.return_value = []
+    service = DailyMarketContextService(
+        db_manager=db,
+        today_fn=lambda: date(2026, 6, 6),
+    )
+    result = MarketReviewRunResult(
+        report="高风险退潮，仓位上限20%，等待确认。",
+        market_review_payload={
+            "kind": "market_review",
+            "region": "cn",
+            "sections": [
+                {
+                    "key": "overview",
+                    "title": "概览",
+                    "markdown": "高风险退潮，仓位上限20%，等待确认。",
+                }
+            ],
+        },
+    )
+
+    with patch(
+        "src.services.daily_market_context.run_market_review",
+        return_value=result,
+    ):
+        generated = service.get_context(
+            region="cn",
+            config=SimpleNamespace(report_language="zh"),
+            notifier=MagicMock(),
+            analyzer=MagicMock(),
+            search_service=MagicMock(),
+            current_query_id="query-1381",
+        )
+
+    with patch("src.services.daily_market_context.run_market_review") as run_review:
+        fallback = service.get_context(
+            region="cn",
+            config=SimpleNamespace(report_language="zh"),
+            notifier=MagicMock(),
+            analyzer=MagicMock(),
+            search_service=MagicMock(),
+            allow_generate=False,
+            current_query_id="query-1381",
+            require_query_id_match=True,
+        )
+
+    assert fallback is generated
+    assert fallback is not None
+    assert fallback.source == "market_review_runtime"
+    assert fallback.query_id == "query-1381"
+    run_review.assert_not_called()
+
+
 def test_force_refresh_reads_latest_same_day_history_after_stale_cache() -> None:
     db = MagicMock()
     db.get_analysis_history.side_effect = [

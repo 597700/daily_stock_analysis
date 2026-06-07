@@ -727,6 +727,49 @@ class MainScheduleModeTestCase(unittest.TestCase):
         self.assertEqual(call_kwargs["target_date"], target_date)
         self.assertEqual(call_kwargs["current_query_id"], "prime-query")
 
+    def test_prime_daily_market_context_query_fallback_reuses_runtime_context(self) -> None:
+        target_date = date(2026, 3, 26)
+        config = self._make_config(
+            trading_day_check_enabled=False,
+            market_review_enabled=True,
+            market_review_region="cn",
+            single_stock_notify=False,
+            merge_email_notification=True,
+            analysis_delay=0,
+            database_path=str(Path(self.temp_dir.name) / "stock_analysis.db"),
+        )
+        pipeline = MagicMock()
+        pipeline._daily_market_context_service = None
+        pipeline.db = MagicMock()
+        pipeline.query_id = "prime-query"
+        context = SimpleNamespace(
+            source="market_review_runtime",
+            summary="本轮运行时复盘摘要",
+            full_report="本轮运行时完整复盘",
+            query_id="prime-query",
+        )
+        service = MagicMock()
+        service.get_context.return_value = context
+
+        with patch(
+            "src.services.daily_market_context.DailyMarketContextService",
+            return_value=service,
+        ):
+            summary, full_report = main._prime_daily_market_context(
+                config,
+                pipeline=pipeline,
+                region="cn",
+                no_market_review=False,
+                allow_generate=False,
+                target_date=target_date,
+                return_full_report=True,
+                require_current_query_match=True,
+            )
+
+        self.assertEqual(summary, "本轮运行时复盘摘要")
+        self.assertEqual(full_report, "本轮运行时完整复盘")
+        self.assertTrue(service.get_context.call_args.kwargs["require_query_id_match"])
+
     def test_run_full_analysis_generates_full_market_review_once_after_stock_analysis(self) -> None:
         args = self._make_args()
         target_date = date(2026, 3, 26)

@@ -544,8 +544,11 @@ def _prime_daily_market_context(
     if context is None:
         return ("", "") if return_full_report else ""
 
-    # Runtime context generation is preload-only and must not replace the full market review run.
-    if context.source != "analysis_history":
+    # Runtime context generation is preload-only and must not replace the full
+    # market review run, except the query-scoped fallback after that run fails.
+    if context.source != "analysis_history" and not (
+        require_current_query_match and context.source == "market_review_runtime"
+    ):
         return ("", "") if return_full_report else ""
 
     summary = str(getattr(context, "summary", ""))

@@ -135,6 +135,16 @@ class DailyMarketContextService:
             if cached is not None:
                 self._cache.pop(cache_key, None)
 
+            runtime_context = self._load_current_query_runtime_cache(
+                context_date=context_date,
+                region=normalized_region,
+                current_query_id=current_query_id,
+                require_query_id_match=require_query_id_match,
+                report_language=report_language,
+            )
+            if runtime_context is not None:
+                return runtime_context
+
             history_context = self._load_same_day_history(
                 region=normalized_region,
                 target_date=context_date,
@@ -174,6 +184,15 @@ class DailyMarketContextService:
                     return cached
                 if cached is not None:
                     self._cache.pop(cache_key, None)
+                runtime_context = self._load_current_query_runtime_cache(
+                    context_date=context_date,
+                    region=normalized_region,
+                    current_query_id=current_query_id,
+                    require_query_id_match=require_query_id_match,
+                    report_language=report_language,
+                )
+                if runtime_context is not None:
+                    return runtime_context
                 history_context = self._load_same_day_history(
                     region=normalized_region,
                     target_date=context_date,
@@ -306,6 +325,36 @@ class DailyMarketContextService:
             )
         return (context_date, region, normalize_report_language(report_language))
 
+    def _load_current_query_runtime_cache(
+        self,
+        *,
+        context_date: date,
+        region: str,
+        current_query_id: Optional[str] = None,
+        require_query_id_match: bool = False,
+        report_language: str = "zh",
+    ) -> Optional[DailyMarketContext]:
+        if (
+            not require_query_id_match
+            or not isinstance(current_query_id, str)
+            or not current_query_id.strip()
+        ):
+            return None
+
+        runtime_cache_key = self._cache_key(
+            context_date=context_date,
+            region=region,
+            report_language=report_language,
+        )
+        cached = self._cache.get(runtime_cache_key)
+        if cached is None or cached.source != "market_review_runtime":
+            return None
+
+        cached_query_id = (cached.query_id or "").strip()
+        if cached_query_id != current_query_id.strip():
+            return None
+        return cached
+
     def _run_market_review_context(
         self,
         *,
@@ -369,6 +418,11 @@ class DailyMarketContextService:
                 source="market_review_runtime",
                 fallback_summary=fallback_summary,
                 fallback_full_report=fallback_summary,
+                query_id=(
+                    current_query_id.strip()
+                    if isinstance(current_query_id, str) and current_query_id.strip()
+                    else None
+                ),
             )
         except Exception as exc:
             logger.warning(
