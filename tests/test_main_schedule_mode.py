@@ -617,7 +617,9 @@ class MainScheduleModeTestCase(unittest.TestCase):
         self.assertEqual(len(reference_times), 1)
         self.assertIs(pipeline.run.call_args.kwargs["current_time"], reference_times[0])
         self.assertEqual(pipeline.run.call_args.kwargs["current_time"].tzinfo, timezone.utc)
-        run_with_lock.assert_not_called()
+        run_with_lock.assert_called_once()
+        self.assertFalse(run_with_lock.call_args.kwargs["merge_notification"])
+        self.assertTrue(run_with_lock.call_args.kwargs["send_notification"])
         run_market_review.assert_not_called()
         refresh.assert_called_once_with(config)
         pipeline.run.assert_called_once()
@@ -673,16 +675,6 @@ class MainScheduleModeTestCase(unittest.TestCase):
                     return_full_report=True,
                     require_current_query_match=True,
                 ),
-                unittest.mock.call(
-                    config,
-                    pipeline=pipeline,
-                    region="cn,us",
-                    no_market_review=False,
-                    allow_generate=False,
-                    force_refresh=True,
-                    target_date=target_date,
-                    return_full_report=True,
-                ),
             ]
         )
         run_with_lock.assert_called_once()
@@ -735,7 +727,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
         self.assertEqual(call_kwargs["target_date"], target_date)
         self.assertEqual(call_kwargs["current_query_id"], "prime-query")
 
-    def test_run_full_analysis_generates_full_market_review_once_before_stock_analysis(self) -> None:
+    def test_run_full_analysis_generates_full_market_review_once_after_stock_analysis(self) -> None:
         args = self._make_args()
         target_date = date(2026, 3, 26)
         config = self._make_config(
@@ -770,7 +762,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
             main.run_full_analysis(config, args, [])
 
         self.assertEqual(pipeline_kwargs["daily_market_context_allow_generate"], False)
-        self.assertEqual(events, ["pipeline", "market-review", "stock-run"])
+        self.assertEqual(events, ["pipeline", "stock-run", "market-review"])
         prime_context.assert_has_calls(
             [
                 unittest.mock.call(
@@ -792,23 +784,143 @@ class MainScheduleModeTestCase(unittest.TestCase):
                     return_full_report=True,
                     require_current_query_match=True,
                 ),
+            ]
+        )
+        run_with_lock_mock.assert_called_once()
+        run_market_review.assert_not_called()
+        refresh.assert_called_once_with(config)
+        pipeline.run.assert_called_once()
+
+    def test_run_full_analysis_still_runs_market_review_for_merge_disabled_with_reused_context(self) -> None:
+        args = self._make_args()
+        target_date = date(2026, 3, 26)
+        config = self._make_config(
+            trading_day_check_enabled=False,
+            market_review_enabled=True,
+            single_stock_notify=False,
+            merge_email_notification=False,
+            analysis_delay=0,
+            database_path=str(Path(self.temp_dir.name) / "stock_analysis.db"),
+        )
+        pipeline = MagicMock()
+        pipeline.run.return_value = []
+        pipeline_kwargs = {}
+
+        def build_pipeline(*args, **kwargs):
+            pipeline_kwargs.update(kwargs)
+            return pipeline
+
+        with patch.object(main, "_refresh_stock_index_cache_for_analysis") as refresh, \
+             patch("main._compute_trading_day_filter", return_value=([], "cn", False)), \
+             patch("main._resolve_daily_market_context_target_date", return_value=target_date), \
+             patch("src.core.pipeline.StockAnalysisPipeline", side_effect=build_pipeline), \
+             patch(
+                "main._prime_daily_market_context",
+                return_value=("大盘退潮，高风险，建议观望。", "## 完整大盘复盘\n市场结构偏弱，建议保守。"),
+             ) as prime_context, \
+             patch("main._run_market_review_with_shared_lock") as run_with_lock, \
+             patch("src.core.market_review.run_market_review") as run_market_review:
+            main.run_full_analysis(config, args, [])
+
+        self.assertEqual(pipeline_kwargs["daily_market_context_allow_generate"], False)
+        prime_context.assert_has_calls(
+            [
                 unittest.mock.call(
                     config,
                     pipeline=pipeline,
                     region="cn",
                     no_market_review=False,
                     allow_generate=False,
-                    force_refresh=True,
+                    target_date=target_date,
+                    return_full_report=False,
+                ),
+                unittest.mock.call(
+                    config,
+                    pipeline=pipeline,
+                    region="cn",
+                    no_market_review=False,
+                    allow_generate=False,
                     target_date=target_date,
                     return_full_report=True,
+                    require_current_query_match=True,
                 ),
             ]
         )
-        run_with_lock_mock.assert_called_once()
-        self.assertTrue(run_with_lock_mock.call_args.kwargs["return_structured"])
+        run_with_lock.assert_called_once()
+        self.assertFalse(run_with_lock.call_args.kwargs["merge_notification"])
         run_market_review.assert_not_called()
         refresh.assert_called_once_with(config)
         pipeline.run.assert_called_once()
+
+    def test_run_full_analysis_waits_for_analysis_delay_before_market_review(self) -> None:
+        args = self._make_args()
+        target_date = date(2026, 3, 26)
+        config = self._make_config(
+            trading_day_check_enabled=False,
+            market_review_enabled=True,
+            single_stock_notify=False,
+            merge_email_notification=False,
+            analysis_delay=2,
+            database_path=str(Path(self.temp_dir.name) / "stock_analysis.db"),
+        )
+        pipeline = MagicMock()
+        events = []
+        pipeline.run.side_effect = lambda **kwargs: events.append("stock-run") or []
+        pipeline_kwargs = {}
+
+        def build_pipeline(*args, **kwargs):
+            events.append("pipeline")
+            pipeline_kwargs.update(kwargs)
+            return pipeline
+
+        def run_with_lock(*args, **kwargs):
+            events.append("market-review")
+            return SimpleNamespace(report="完整复盘")
+
+        with patch.object(main, "_refresh_stock_index_cache_for_analysis") as refresh, \
+             patch("main._compute_trading_day_filter", return_value=([], "cn", False)), \
+             patch("main._resolve_daily_market_context_target_date", return_value=target_date), \
+             patch("src.core.pipeline.StockAnalysisPipeline", side_effect=build_pipeline), \
+             patch("main._prime_daily_market_context", return_value=("", "")) as prime_context, \
+             patch("main._run_market_review_with_shared_lock", side_effect=run_with_lock) as run_with_lock_mock, \
+             patch("time.sleep") as sleep, \
+             patch("src.core.market_review.run_market_review") as run_market_review:
+            main.run_full_analysis(config, args, [])
+
+        self.assertEqual(pipeline_kwargs["daily_market_context_allow_generate"], False)
+        self.assertEqual(events, ["pipeline", "stock-run", "market-review"])
+        self.assertEqual(sleep.call_count, 1)
+        sleep.assert_called_once_with(2)
+        self.assertEqual(
+            run_with_lock_mock.call_args.kwargs["send_notification"],
+            True,
+        )
+        run_market_review.assert_not_called()
+        run_with_lock_mock.assert_called_once()
+        refresh.assert_called_once_with(config)
+        prime_context.assert_has_calls(
+            [
+                unittest.mock.call(
+                    config,
+                    pipeline=pipeline,
+                    region="cn",
+                    no_market_review=False,
+                    allow_generate=False,
+                    target_date=target_date,
+                    return_full_report=False,
+                ),
+                unittest.mock.call(
+                    config,
+                    pipeline=pipeline,
+                    region="cn",
+                    no_market_review=False,
+                    allow_generate=False,
+                    target_date=target_date,
+                    return_full_report=True,
+                    require_current_query_match=True,
+                ),
+            ]
+        )
 
     def test_run_full_analysis_reuses_cached_market_context_as_full_report(self) -> None:
         args = self._make_args()
