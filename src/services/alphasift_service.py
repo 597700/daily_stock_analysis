@@ -69,13 +69,33 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _resolve_alphasift_data_dir() -> Path:
+    configured = _env_text(os.getenv("ALPHASIFT_DATA_DIR"))
+    if configured:
+        return Path(configured)
+    return DSA_ALPHASIFT_DATA_DIR
+
+
+def _alphasift_hotspot_cache_path() -> Path:
+    if _env_text(os.getenv("ALPHASIFT_DATA_DIR")):
+        return _resolve_alphasift_data_dir() / "hotspots.json"
+    return DSA_ALPHASIFT_HOTSPOT_CACHE_PATH
+
+
+def _alphasift_hotspot_history_path() -> Path:
+    if _env_text(os.getenv("ALPHASIFT_DATA_DIR")):
+        return _resolve_alphasift_data_dir() / "hotspot.history.jsonl"
+    return DSA_ALPHASIFT_HOTSPOT_HISTORY_PATH
+
+
 def _load_alphasift_hotspot_cache(*, provider: str, top: int) -> Optional[Dict[str, Any]]:
+    cache_path = _alphasift_hotspot_cache_path()
     try:
-        raw = json.loads(DSA_ALPHASIFT_HOTSPOT_CACHE_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(cache_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
     except Exception as exc:
-        logger.warning("Failed to read AlphaSift hotspot cache: %s", exc)
+        logger.warning("Failed to read AlphaSift hotspot cache from %s: %s", cache_path, exc)
         return None
 
     payload = raw.get("payload") if isinstance(raw, dict) else None
@@ -100,18 +120,19 @@ def _load_alphasift_hotspot_cache(*, provider: str, top: int) -> Optional[Dict[s
 
 
 def _write_alphasift_hotspot_cache(payload: Dict[str, Any]) -> None:
+    cache_path = _alphasift_hotspot_cache_path()
     try:
-        DSA_ALPHASIFT_HOTSPOT_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         cached_at = _utc_now_iso()
         cache_payload = dict(payload)
         cache_payload["cache_used"] = False
         cache_payload["cached_at"] = cached_at
-        DSA_ALPHASIFT_HOTSPOT_CACHE_PATH.write_text(
+        cache_path.write_text(
             json.dumps({"cached_at": cached_at, "payload": cache_payload}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     except Exception as exc:
-        logger.warning("Failed to write AlphaSift hotspot cache: %s", exc)
+        logger.warning("Failed to write AlphaSift hotspot cache to %s: %s", cache_path, exc)
 
 
 class AlphaSiftStrategyResponse(BaseModel):
@@ -182,8 +203,8 @@ class AlphaSiftService:
                 raw = discover_hotspots(
                     provider=provider_arg,
                     top=top_count,
-                    history_path=DSA_ALPHASIFT_HOTSPOT_HISTORY_PATH,
-                    fallback_cache_path=DSA_ALPHASIFT_HOTSPOT_CACHE_PATH,
+                    history_path=_alphasift_hotspot_history_path(),
+                    fallback_cache_path=_alphasift_hotspot_cache_path(),
                 )
         except HTTPException:
             raise
@@ -941,7 +962,7 @@ def _build_alphasift_runtime_env(config: Config, *, max_results: Optional[int] =
     put_default("LLM_CANDIDATE_MULTIPLIER", str(DSA_ALPHASIFT_LLM_CANDIDATE_MULTIPLIER))
     put_default("LLM_MAX_CANDIDATES", str(_resolve_dsa_llm_max_candidates(max_results)))
     put_default("SNAPSHOT_SOURCE_PRIORITY", DSA_ALPHASIFT_SNAPSHOT_SOURCE_PRIORITY)
-    alphasift_data_dir = DSA_ALPHASIFT_DATA_DIR
+    alphasift_data_dir = _resolve_alphasift_data_dir()
     put_default("ALPHASIFT_DATA_DIR", str(alphasift_data_dir))
     put_default("ALPHASIFT_FALLBACK_SNAPSHOT_PATH", str(alphasift_data_dir / "snapshot.last_good.json"))
     put_default("ALPHASIFT_DAILY_HISTORY_CACHE_DIR", str(alphasift_data_dir / "daily_history"))
@@ -1047,21 +1068,21 @@ class DsaEastMoneyHotspotProvider:
     }
 
     def stock_board_concept_name_em(self) -> Any:
-        frame = self._fetch_board_changes()
+        frame = self._fetch_board_changes_with_fallback()
         if frame is not None and not frame.empty:
             return frame
-        frame = self._fetch_rankings("concept")
+        frame = self._fetch_rankings_with_fallback("concept")
         if frame is not None and not frame.empty:
             return frame
         return self._fetch_board_names(source_fs="m:90 t:3 f:!50")
 
     def stock_board_industry_name_em(self) -> Any:
-        concept_frame = self._fetch_board_changes()
+        concept_frame = self._fetch_board_changes_with_fallback()
         if concept_frame is not None and not concept_frame.empty:
             import pandas as pd
 
             return pd.DataFrame()
-        frame = self._fetch_rankings("industry")
+        frame = self._fetch_rankings_with_fallback("industry")
         if frame is not None and not frame.empty:
             return frame
         return self._fetch_board_names(source_fs="m:90 t:2 f:!50")
@@ -1159,6 +1180,15 @@ class DsaEastMoneyHotspotProvider:
         rows.sort(key=lambda item: (item.get("heat_score") or 0, item.get("event_count") or 0), reverse=True)
         return pd.DataFrame(rows)
 
+    def _fetch_board_changes_with_fallback(self) -> Any:
+        import pandas as pd
+
+        try:
+            return self._fetch_board_changes()
+        except Exception as exc:
+            logger.warning("AlphaSift hotspot board-change fetch failed; falling back to ranking/board names: %s", exc)
+            return pd.DataFrame()
+
     def _is_broad_board(self, name: str) -> bool:
         return any(keyword in name for keyword in self._BROAD_BOARD_KEYWORDS)
 
@@ -1179,6 +1209,15 @@ class DsaEastMoneyHotspotProvider:
                 "rank": index + 1,
             })
         return pd.DataFrame(rows)
+
+    def _fetch_rankings_with_fallback(self, source: str) -> Any:
+        import pandas as pd
+
+        try:
+            return self._fetch_rankings(source)
+        except Exception as exc:
+            logger.warning("AlphaSift hotspot %s ranking fetch failed; falling back to board names: %s", source, exc)
+            return pd.DataFrame()
 
     def _fetch_board_names(self, *, source_fs: str) -> Any:
         import pandas as pd
