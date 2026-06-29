@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-多因子量化选股模块 — 中证800优选策略
+多因子量化选股模块 — 中证800+上证优选策略
 
-功能：基于12因子多维度打分，从中证800成分股中精选5-8只推荐
+功能：基于12因子多维度打分，从中证800+上证成分股中精选5-8只推荐
 策略：技术面(40%) + 基本面(35%) + 资金面(25%)
 
 两阶段因子计算：
@@ -82,9 +82,10 @@ BAOSTOCK_TIMEOUT = 180  # Baostock 总超时（秒）
 # ============================================================
 
 def fetch_pool_stocks() -> set:
-    """获取中证800成分股（沪深300 + 中证500）"""
+    """获取中证800+上证成分股（沪深300 + 中证500 + 上证50 + 上证180）"""
     pool = set()
-    for idx, name in [("000300", "沪深300"), ("000905", "中证500")]:
+    for idx, name in [("000300", "沪深300"), ("000905", "中证500"),
+                      ("000016", "上证50"), ("000010", "上证180")]:
         try:
             df = ak.index_stock_cons(symbol=idx)
             if df is not None and not df.empty:
@@ -456,12 +457,12 @@ def run_quant_screen():
     Stage 2: 精算 — 对 Top N 获取K线计算真实技术因子，重新打分精选
     """
     logger.info("=" * 50)
-    logger.info("📊 多因子量化选股 — 中证800优选策略（两阶段）")
+    logger.info("📊 多因子量化选股 — 中证800+上证优选策略（两阶段）")
     logger.info("=" * 50)
 
     # ── 1. 获取成分股池 ──
     pool_codes = fetch_pool_stocks()
-    logger.info(f"股票池: {len(pool_codes)}只（中证800）")
+    logger.info(f"股票池: {len(pool_codes)}只（中证800+上证）")
 
     # ── 2. 获取市场数据 ──
     spot, breadth, index_df, code_col, name_col, pct_col, vol_col, price_col = fetch_market_data()
@@ -635,7 +636,7 @@ def generate_markdown_report(result: dict, report_date: str) -> str:
     lines = []
     lines.append(f"# 📈 每日量化精选 — {report_date}")
     lines.append("")
-    lines.append(f"> **策略**: 中证800多因子量化 | 技术面40% + 基本面35% + 资金面25%")
+    lines.append(f"> **策略**: 中证800+上证多因子量化 | 技术面40% + 基本面35% + 资金面25%")
     lines.append(f"> **数据来源**: AkShare公开数据 + Baostock历史K线 | 仅供研究参考，不构成投资建议")
     lines.append("")
 
@@ -663,7 +664,7 @@ def generate_markdown_report(result: dict, report_date: str) -> str:
     lines.append("## 二、今日量化精选")
     lines.append("")
     stage_info = f"两阶段筛选（粗筛{result.get('coarse_top_n', 50)}只 → K线精算{result.get('kline_fetched', 0)}只 → 精选{len(recs)}只）"
-    lines.append(f"共筛选 **{result['filtered_count']}** 只（中证800池经硬性过滤后），{stage_info}：")
+    lines.append(f"共筛选 **{result['filtered_count']}** 只（中证800+上证池经硬性过滤后），{stage_info}：")
     lines.append("")
 
     for i, rec in enumerate(recs):
@@ -697,7 +698,7 @@ def generate_markdown_report(result: dict, report_date: str) -> str:
     # 策略说明
     lines.append("## 四、策略说明")
     lines.append("")
-    lines.append("本策略基于中证800成分股池（沪深300+中证500），采用12因子多维度打分体系：")
+    lines.append("本策略基于中证800+上证成分股池（沪深300+中证500+上证50+上证180），采用12因子多维度打分体系：")
     lines.append("")
     lines.append("- **技术面(40%)**: MA趋势强度、RSI超卖修复、成交量异动、MACD金叉信号、布林带位置")
     lines.append("  - 粗筛使用实时行情快照估算 → 精算使用Baostock历史K线精确计算")
